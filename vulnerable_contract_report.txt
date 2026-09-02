@@ -1,0 +1,34 @@
+
+# Security Audit Report
+## Contract: vulnerable_contract
+
+### Executive Summary
+- Total Issues: 2
+- Priority Level: IMMEDIATE
+- Recommendation: Critical vulnerabilities found - fix immediately
+
+### Severity Distribution
+- CRITICAL: 1
+- HIGH: 1
+- MEDIUM: 0
+- LOW: 0
+
+### Recommended Actions
+1. Fix Use of tx.origin (HIGH)
+2. Fix Unsafe External Call (CRITICAL)
+
+### Detailed Findings
+
+#### Use of tx.origin (HIGH)
+- Description: Using tx.origin for authorization is vulnerable to phishing attacks
+- Lines: 0
+- Recommendation: Use msg.sender instead of tx.origin
+
+#### Unsafe External Call (CRITICAL)
+- Description: Unchecked external call can lead to reentrancy attacks
+- Lines: 0
+- Recommendation: Use send() or transfer() instead of call.value
+
+### Conclusion
+This report was generated using automated static analysis and AI triage.
+Manual review is recommended for critical vulnerabilities.
