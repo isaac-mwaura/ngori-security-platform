@@ -6,4 +6,4 @@ venv/
 .venv/
 *.sol
 !examples/*.sol
-.DS_Store
+.DS_Store.env

@@ -1,75 +1,84 @@
+import subprocess
 import sys
-import json
+import os
 from pathlib import Path
-from .models.contract import Contract
-from .analyzer.static import run_static_analysis
-from .analyzer.evidence import generate_evidence_report
-from .ai.triage import triage_vulnerabilities
-from .ai.reporter import generate_report
-from .utils.validators import validate_contract_code
+from dotenv import load_dotenv
+from src.analyzer.normalizer import normalize_slither_output
+from src.analyzer.deduplicate import deduplicate_findings
+from src.ai.triage import groq_triage_finding
+from src.ai.router import GroqRouter
+from src.verification.foundry import run_foundry_test
+from src.evidence.engine import update_evidence
+from src.reporting.generator import generate_report
+from src.models.finding import Finding
+
+load_dotenv()
+
+PROJECT_ROOT = Path(__file__).parent.parent
+BLOCKCHAIN_DIR = PROJECT_ROOT / "blockchain"
+
+def run_slither(contract_path: str, output_path: str) -> None:
+    """Run Slither static analysis on a contract."""
+    abs_contract = os.path.abspath(contract_path)
+    abs_output = os.path.abspath(output_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{os.path.expanduser('/home/arch/.config/.foundry/bin')}:{env.get('PATH', '')}"
+    subprocess.run(
+        ["slither", abs_contract, "--json", abs_output],
+        cwd=BLOCKCHAIN_DIR,
+        env=env,
+        timeout=120
+    )
 
 def main():
-    """Command-line interface for the security platform."""
     if len(sys.argv) < 2:
         print("Usage: python -m src.main <contract_file.sol>")
-        print("Example: python -m src.main examples/vulnerable_contract.sol")
         sys.exit(1)
-    
-    file_path = sys.argv[1]
-    
-    # Read contract
-    try:
-        with open(file_path, 'r') as f:
-            code = f.read()
-    except FileNotFoundError:
-        print(f"ERROR: File not found: {file_path}")
-        sys.exit(1)
-    
-    # Validate contract
-    is_valid, errors = validate_contract_code(code)
-    if not is_valid:
-        print("ERROR: Invalid contract code:")
-        for error in errors:
-            print(f"  - {error}")
-        sys.exit(1)
-    
-    # Create contract object
-    contract = Contract(
-        name=Path(file_path).stem,
-        code=code
-    )
-    
-    print(f"\n🔍 Analyzing contract: {contract.name}")
+
+    contract_path = sys.argv[1]
+    print(f"\n🔍 Analyzing contract: {Path(contract_path).stem}")
     print("=" * 60)
-    
-    # Run analysis
-    print("\n📊 Running static analysis...")
-    contract = run_static_analysis(contract)
-    
-    # Generate evidence
-    print("📝 Generating evidence...")
-    evidence = generate_evidence_report(contract)
-    
-    # AI triage
-    print("🤖 AI triage in progress...")
-    triage_result = triage_vulnerabilities(contract)
-    
-    # Generate report
+
+    # 1. Run Slither
+    print("📊 Running Slither static analysis...")
+    raw_json_path = BLOCKCHAIN_DIR / "evidence" / "slither_raw.json"
+    os.makedirs(BLOCKCHAIN_DIR / "evidence", exist_ok=True)
+    run_slither(contract_path, str(raw_json_path))
+
+    # 2. Normalize Findings
+    print("📝 Normalizing findings...")
+    findings = normalize_slither_output(str(raw_json_path))
+
+    # 3. Deduplicate
+    print("🧹 Deduplicating findings...")
+    findings = deduplicate_findings(findings)
+
+    if not findings:
+        print("No findings detected. Exiting.")
+        sys.exit(0)
+
+    # 4. AI Triage & Verification
+    print("🤖 AI Triage in progress...")
+    router = GroqRouter()
+    verified_findings = []
+    for finding in findings:
+        # Triage
+        ai_result = groq_triage_finding(finding)
+        # Update finding with AI result if needed
+        # ...
+
+        # Verify
+        verification_result = run_foundry_test(str(contract_path))
+        finding = update_evidence(finding, verification_result)
+        verified_findings.append(finding)
+
+    # 5. Generate Report
     print("📄 Generating report...")
-    report = generate_report(contract, triage_result)
-    
-    # Display results
-    print("\n" + "=" * 60)
-    print("📋 ANALYSIS COMPLETE")
-    print("=" * 60)
-    print(report)
-    
-    # Save report
-    output_file = f"{contract.name}_report.txt"
-    with open(output_file, 'w') as f:
-        f.write(report)
-    
-    print(f"\n✅ Report saved to: {output_file}")
+    report_path = PROJECT_ROOT / "reports" / f"{Path(contract_path).stem}.md"
+    os.makedirs(PROJECT_ROOT / "reports", exist_ok=True)
+    generate_report(verified_findings, str(report_path))
+
+    print(f"✅ Report generated: {report_path}")
 
 if __name__ == "__main__":
     main()

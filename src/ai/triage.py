@@ -1,49 +1,44 @@
-from typing import Dict, Any, List
-from ..models.contract import Contract, Vulnerability
+import os
+import json
+from groq import Groq
+from dotenv import load_dotenv
+from src.models.finding import Finding
 
-def triage_vulnerabilities(contract: Contract) -> Dict[str, Any]:
-    """
-    Use AI to triage and prioritize vulnerabilities.
-    
-    This simulates AI triage - in production, this would use an LLM.
-    """
-    if not contract.vulnerabilities:
-        return {"priority": "SAFE", "recommendation": "No issues found", "actions": []}
-    
-    # Count severities
-    severities = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
-    for vuln in contract.vulnerabilities:
-        severities[vuln.severity] = severities.get(vuln.severity, 0) + 1
-    
-    # Determine priority
-    if severities["CRITICAL"] > 0:
-        priority = "IMMEDIATE"
-        recommendation = "Critical vulnerabilities found - fix immediately"
-    elif severities["HIGH"] > 1 or severities["CRITICAL"] > 0:
-        priority = "URGENT"
-        recommendation = "High severity issues require urgent attention"
-    elif severities["HIGH"] > 0 or severities["MEDIUM"] > 2:
-        priority = "HIGH"
-        recommendation = "Significant issues need to be addressed"
-    elif severities["MEDIUM"] > 0:
-        priority = "MEDIUM"
-        recommendation = "Medium priority issues should be reviewed"
-    else:
-        priority = "LOW"
-        recommendation = "Minor issues can be addressed in routine maintenance"
-    
-    # Generate triage actions
-    actions = []
-    for vuln in contract.vulnerabilities:
-        if vuln.severity in ["CRITICAL", "HIGH"]:
-            actions.append(f"Fix {vuln.name} ({vuln.severity})")
-    
-    if not actions:
-        actions.append("Review all vulnerabilities")
-    
-    return {
-        "priority": priority,
-        "recommendation": recommendation,
-        "actions": actions[:3],  # Limit to top 3
-        "severity_counts": severities
-    }
+load_dotenv()
+
+def groq_triage_finding(finding: Finding) -> dict:
+    """Send a finding to Groq for triage."""
+    api_key = os.getenv("GROQ_API_KEY_1")
+    if not api_key:
+        return {"error": "GROQ_API_KEY_1 not set in .env file"}
+
+    client = Groq(api_key=api_key)
+
+    prompt = f"""
+You are a security expert. Analyze this smart contract vulnerability finding and return a structured JSON.
+
+**Finding:**
+- **Detector:** {finding.detector}
+- **Severity (from Slither):** {finding.severity}
+- **Confidence (from Slither):** {finding.confidence}
+- **Contract:** {finding.contract}
+- **Function:** {finding.function}
+- **Description:** {finding.description}
+
+**Return a JSON object with:**
+- `classification`: "vulnerability", "informational", or "false_positive"
+- `severity`: "CRITICAL", "HIGH", "MEDIUM", "LOW"
+- `confidence`: "HIGH", "MEDIUM", "LOW"
+- `reason`: Brief justification
+- `false_positive_risk`: "HIGH", "MEDIUM", "LOW"
+- `recommended_verification`: A short recommendation for how to verify this finding
+"""
+    try:
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="gemma-7b-it",
+            response_format={"type": "json_object"}
+        )
+        return json.loads(chat_completion.choices[0].message.content)
+    except Exception as e:
+        return {"error": str(e)}
