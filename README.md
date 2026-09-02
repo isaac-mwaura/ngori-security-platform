@@ -10,6 +10,10 @@ AI-assisted smart contract security analysis platform with evidence-based report
 - **Comprehensive Reports**: Human-readable security audits
 - **Extensible**: Easy to add new vulnerability patterns
 
+## Current Status
+
+> **Note:** This is a **prototype** demonstrating security analysis patterns. The static analysis uses rule-based pattern matching, and the evidence model (E0–E5) is currently **simulated** to showcase the architecture.
+
 ## Setup
 
 ```bash
@@ -66,22 +70,24 @@ Example output:
 - ✅ Structured outputs
 - ✅ Clean architecture
 
-## Evidence Model
+## Evidence Model (currently simulated)
 
-Each vulnerability includes:
+| Stage | Description | Status |
+|-------|-------------|--------|
+| E0 | Static evidence (code patterns) | ✅ Pattern matching |
+| E1 | Compiled proof | 🔄 Simulated |
+| E2 | Executed demonstration | 🔄 Simulated |
+| E3 | State change analysis | 🔄 Simulated |
+| E4 | Economic impact | 🔄 Simulated |
+| E5 | Reproducibility | 🔄 Simulated |
 
-E0: Static evidence (code patterns)
+*The architecture supports full implementation with real tools (Slither, Foundry) in future iterations.*
 
-E1: Compiled proof (simulated)
+## Roadmap
 
-E2: Executed demonstration (simulated)
-
-E3: State change analysis (simulated)
-
-E4: Economic impact (simulated)
-
-E5: Reproducibility (simulated)
-
-## License
+- [ ] Integrate real static analysis (Slither)
+- [ ] Add real contract compilation (Foundry)
+- [ ] Execute actual test cases
+- [ ] Generate real economic impact analysis
 
 MIT
