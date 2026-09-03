@@ -17,6 +17,11 @@ jobs:
         submodules: recursive
         fetch-depth: 0
 
+    - name: Init & update git submodules
+      run: |
+        git submodule sync --recursive
+        git submodule update --init --recursive --depth=1
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -36,6 +41,12 @@ jobs:
 
     - name: Set up Foundry (includes Solc)
       uses: foundry-rs/foundry-toolchain@v1
+
+    - name: Install Foundry dependencies (forge install fallback)
+      run: |
+        cd blockchain
+        # forge install will clone dependencies into blockchain/lib if submodule is missing
+        forge install || true
 
     - name: Foundry Build
       run: |
