@@ -1,93 +1,30 @@
 # NGORI Security Platform
 
-AI-assisted smart contract security analysis platform with evidence-based reporting.
+NGORI is a smart‑contract security analysis tool that combines static analysis, AI‑assisted triage, and Foundry‑based verification. It produces a structured security report and a JSONL dataset for further analysis.
 
-## Features
+## How it works
 
-- **Static Analysis**: Simulated security pattern detection
-- **AI Triage**: Automatic prioritization of vulnerabilities
-- **Evidence Generation**: Reproducible evidence for each finding
-- **Comprehensive Reports**: Human-readable security audits
-- **Extensible**: Easy to add new vulnerability patterns
+1. **Static analysis** – runs Slither on a Solidity contract and extracts findings.
+2. **Normalization** – converts Slither’s output into a consistent internal format.
+3. **Deduplication** – merges duplicate findings from different detectors.
+4. **AI triage** (optional) – sends each finding to Groq (four keys) for severity and false‑positive assessment.
+5. **Verification** – compiles and tests the contract with Foundry; checks for state changes and reproducibility markers.
+6. **Reporting** – generates a markdown report and a JSONL dataset.
 
-## Current Status
+## Requirements
 
-> **Note:** This is a **prototype** demonstrating security analysis patterns. The static analysis uses rule-based pattern matching, and the evidence model (E0–E5) is currently **simulated** to showcase the architecture.
+- Python 3.10+
+- Foundry (forge, anvil, cast)
+- Slither (install via pip)
+- Groq API keys (optional, for AI triage)
 
-## Setup
+## Installation
+
+Clone the repository and set up the Python environment:
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+git clone https://github.com/isaac-mwaura/ngori-security-platform.git
+cd ngori-security-platform
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-## Usage
-
-Analyze a contract:
-
-```bash
-python -m src.main examples/vulnerable_contract.sol
-```
-
-Example output:
-
-```text
-🔍 Analyzing contract: VulnerableBank
-============================================================
-📊 Running static analysis...
-📝 Generating evidence...
-🤖 AI triage in progress...
-📄 Generating report...
-
-============================================================
-📋 ANALYSIS COMPLETE
-============================================================
-
-# Security Audit Report
-## Contract: VulnerableBank
-
-### Executive Summary
-- Total Issues: 3
-- Priority Level: URGENT
-- Recommendation: High severity issues require urgent attention
-...
-```
-
-## Architecture
-
-- `analyzer/`: Static analysis and evidence generation
-- `ai/`: Triage and reporting
-- `models/`: Data structures
-- `utils/`: Validation utilities
-- `examples/`: Sample vulnerable contracts
-
-## Skills Demonstrated
-
-- ✅ Security analysis
-- ✅ AI integration patterns
-- ✅ Evidence-based reporting
-- ✅ Structured outputs
-- ✅ Clean architecture
-
-## Evidence Model (currently simulated)
-
-| Stage | Description | Status |
-|-------|-------------|--------|
-| E0 | Static evidence (code patterns) | ✅ Pattern matching |
-| E1 | Compiled proof | 🔄 Simulated |
-| E2 | Executed demonstration | 🔄 Simulated |
-| E3 | State change analysis | 🔄 Simulated |
-| E4 | Economic impact | 🔄 Simulated |
-| E5 | Reproducibility | 🔄 Simulated |
-
-*The architecture supports full implementation with real tools (Slither, Foundry) in future iterations.*
-
-## Roadmap
-
-- [ ] Integrate real static analysis (Slither)
-- [ ] Add real contract compilation (Foundry)
-- [ ] Execute actual test cases
-- [ ] Generate real economic impact analysis
-
-MIT
