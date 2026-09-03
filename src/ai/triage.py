@@ -1,7 +1,6 @@
 from collections import Counter
 from typing import Any, Dict, List
-from src.models.contract import Contract
-from src.models.finding import Finding
+from src.models.finding import Finding, VerificationResult
 from src.ai.router import GroqRouter
 
 SYSTEM_PROMPT = """
@@ -23,6 +22,7 @@ Return valid JSON with exactly these fields:
 }
 """
 
+
 def _messages(finding: Finding) -> List[Dict[str, str]]:
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -42,15 +42,24 @@ Source mapping:
     ]
 
 
-def triage_vulnerabilities(contract: Contract) -> Dict[str, Any]:
-    if not contract.vulnerabilities:
-        return {"priority": "SAFE", "recommendation": "No issues found", "actions": []}
-
+def triage_vulnerabilities(contract: object) -> Dict[str, Any]:
+    """Run rule-based severity prioritization (deterministic, no AI required)."""
     severities = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
-    for vulnerability in contract.vulnerabilities:
-        severities[vulnerability.severity] = severities.get(vulnerability.severity, 0) + 1
 
-    if severities["CRITICAL"] > 0:
+    # Handle both Contract dataclass and list of Findings
+    findings: List = []
+    if hasattr(contract, "vulnerabilities"):
+        for vuln in contract.vulnerabilities:
+            severities[vuln.severity] = severities.get(vuln.severity, 0) + 1
+    elif hasattr(contract, "findings"):
+        findings = contract.findings or []
+        for finding in findings:
+            severities[finding.severity] = severities.get(finding.severity, 0) + 1
+
+    if not any(severities.values()):
+        priority = "SAFE"
+        recommendation = "No issues found"
+    elif severities["CRITICAL"] > 0:
         priority = "IMMEDIATE"
         recommendation = "Critical vulnerabilities found - fix immediately"
     elif severities["HIGH"] > 1:
@@ -66,11 +75,11 @@ def triage_vulnerabilities(contract: Contract) -> Dict[str, Any]:
         priority = "LOW"
         recommendation = "Minor issues can be addressed in routine maintenance"
 
-    actions = [
-        f"Fix {vulnerability.name} ({vulnerability.severity})"
-        for vulnerability in contract.vulnerabilities
-        if vulnerability.severity in ["CRITICAL", "HIGH"]
-    ]
+    actions = []
+    if hasattr(contract, "vulnerabilities"):
+        for vuln in contract.vulnerabilities:
+            if vuln.severity in ["CRITICAL", "HIGH"]:
+                actions.append(f"Fix {vuln.name if hasattr(vuln, 'name') else 'issue'} ({vuln.severity})")
     if not actions:
         actions.append("Review all vulnerabilities")
 
@@ -81,13 +90,36 @@ def triage_vulnerabilities(contract: Contract) -> Dict[str, Any]:
         "severity_counts": severities,
     }
 
+
 def groq_triage_finding(
     finding: Finding,
     passes: int = 4,
 ) -> Dict[str, Any]:
+    """Triage a single finding using Groq AI with key rotation and fallback.
+
+    The router is a real dependency - if no keys are available, deterministic
+    fallback is used instead of fake AI results.
+    """
     router = GroqRouter()
-    results = []
-    passes = max(1, min(passes, router.available() or 1))
+    results: List[Dict[str, Any]] = []
+
+    # If no keys available, return deterministic fallback
+    if not router.available:
+        return {
+            "classification": "informational",
+            "severity": finding.severity,
+            "confidence": "LOW",
+            "reason": "No Groq API keys available - deterministic fallback applied",
+            "false_positive_risk": "MEDIUM",
+            "recommended_verification": "Manual review required without AI triage",
+            "ensemble": {
+                "passes": 0,
+                "agreement": 0.0,
+                "votes": [],
+            },
+        }
+
+    passes = max(1, min(passes, router.available or 1))
 
     for _ in range(passes):
         result = router.complete_json(_messages(finding))
@@ -95,9 +127,22 @@ def groq_triage_finding(
             results.append(result)
 
     if not results:
-        return {"error": "AI triage failed", "votes": []}
+        # AI failed completely - return deterministic fallback
+        return {
+            "classification": "informational",
+            "severity": finding.severity,
+            "confidence": "LOW",
+            "reason": "AI triage failed - all Groq keys exhausted",
+            "false_positive_risk": "MEDIUM",
+            "recommended_verification": "Run Foundry verification instead",
+            "ensemble": {
+                "passes": 0,
+                "agreement": 0.0,
+                "votes": [],
+            },
+        }
 
-    def majority(field: str, default: str):
+    def majority(field: str, default: str) -> str:
         values = [r.get(field, default) for r in results]
         return Counter(values).most_common(1)[0][0]
 
@@ -108,12 +153,12 @@ def groq_triage_finding(
     false_positive_risk = majority("false_positive_risk", "MEDIUM")
 
     reasons = []
-    verification = []
+    verification_notes = []
     for result in results:
         if result.get("reason"):
             reasons.append(result["reason"])
         if result.get("recommended_verification"):
-            verification.append(result["recommended_verification"])
+            verification_notes.append(result["recommended_verification"])
 
     agreement = Counter(classifications).most_common(1)[0][1] / len(classifications)
 
@@ -123,7 +168,7 @@ def groq_triage_finding(
         "confidence": confidence,
         "reason": reasons[0] if reasons else "",
         "false_positive_risk": false_positive_risk,
-        "recommended_verification": verification[0] if verification else "",
+        "recommended_verification": verification_notes[0] if verification_notes else "",
         "ensemble": {
             "passes": len(results),
             "agreement": round(agreement, 3),

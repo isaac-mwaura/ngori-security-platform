@@ -3,6 +3,9 @@ import subprocess
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from src.analyzer.normalizer import normalize_slither_output
 from src.analyzer.deduplicate import deduplicate_findings
 from src.ai.triage import groq_triage_finding
@@ -11,29 +14,35 @@ from src.evidence.engine import update_evidence
 from src.reporting.generator import generate_report
 from src.dataset.exporter import export_jsonl
 
-load_dotenv()
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BLOCKCHAIN_DIR = PROJECT_ROOT / "blockchain"
 EVIDENCE_DIR = BLOCKCHAIN_DIR / "evidence"
 REPORT_DIR = PROJECT_ROOT / "reports"
 DATASET_DIR = PROJECT_ROOT / "dataset"
 
+
 def run_slither(contract_path: str, output_path: str) -> None:
+    """Run Slither static analysis on a contract.
+
+    Slither may return non-zero exit code when vulnerabilities are found,
+    but the JSON output is still valid. We check that output was generated,
+    not that the process exit code.
+    """
     contract = Path(contract_path).resolve()
     output = Path(output_path).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    # Run slither - may return non-zero if vulnerabilities found, but that's OK
+
     result = subprocess.run(
         ["slither", str(contract), "--json", str(output)],
         capture_output=True,
         text=True,
         timeout=120,
     )
+
     # Slither may return 1 if vulnerabilities found, but output JSON is still valid
-    # Check if output was generated successfully
     if not output.exists():
         raise RuntimeError("Slither failed to generate output:\n" + result.stderr)
+
 
 def main():
     if len(sys.argv) < 2:
@@ -50,15 +59,15 @@ def main():
 
     raw_json = EVIDENCE_DIR / "slither_raw.json"
 
-    # E0: Static Analysis
-    print("📊 Running Slither...")
+    # E0: Static Analysis - Slither runs and produces JSON output
+    print("📊 Running Slither (E0: Static)...")
     run_slither(str(contract_path), str(raw_json))
 
-    # Normalize
+    # Normalize Slither output into NGORI Finding model objects
     print("📝 Normalizing findings...")
     findings = normalize_slither_output(str(raw_json))
 
-    # Deduplicate
+    # Deduplicate findings using deterministic fingerprinting
     print("🧹 Deduplicating...")
     findings = deduplicate_findings(findings)
 
@@ -68,19 +77,25 @@ def main():
 
     print(f"Found {len(findings)} findings.")
 
-    # AI + Verification
+    # AI + Verification for each finding
     for index, finding in enumerate(findings, start=1):
         print(f"\n🤖 Finding {index}/{len(findings)}: {finding.detector}")
 
-        # AI Triage (4-Key Consensus)
+        # AI Triage (Groq consensus-based, with deterministic fallback)
+        print("   AI triage...")
         ai_result = groq_triage_finding(finding, passes=4)
         finding.ai_result = ai_result
-        print(f"   AI classification: {ai_result.get('classification', 'ERROR')}")
+        ai_classification = ai_result.get("classification", "ERROR")
+        print(f"   AI classification: {ai_classification}")
 
         # Foundry Verification
-        print("   🔬 Running Foundry...")
+        print("   🔬 Running Foundry verification...")
         verification = run_foundry_test(str(contract_path))
         finding = update_evidence(finding, verification)
+
+        # Classify evidence level
+        ev_level = finding.evidence_level
+        print(f"   Evidence level: {ev_level}")
 
     # Generate Reports
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -96,6 +111,8 @@ def main():
     print("✅ NGORI COMPLETE")
     print(f"📄 Report: {report_path}")
     print(f"🧠 Dataset: {dataset_path}")
+    print(f"📊 Evidence levels: {[f.evidence_level for f in findings]}")
+
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,9 @@
 from typing import List
 from src.models.finding import Finding
 
+
 def generate_report(findings: List[Finding], output_path: str) -> None:
+    """Generate a human-readable security report with E0-E5 evidence hierarchy."""
     report = f"# NGORI Security Report\n\n**Total Findings:** {len(findings)}\n\n"
     if not findings:
         report += "No findings were identified.\n"
@@ -14,13 +16,15 @@ def generate_report(findings: List[Finding], output_path: str) -> None:
         if finding.function:
             report += f"- **Function:** `{finding.function}`\n"
         report += f"- **Description:** {finding.description}\n\n"
-        report += "### Evidence\n\n"
+        report += "### Evidence (E0-E5 Hierarchy)\n\n"
         report += f"- E0 Static: {'✅ PASS' if finding.static_evidence else '❌ FAIL'}\n"
         report += f"- E1 Build: {'✅ PASS' if finding.build_verified else '❌ FAIL'}\n"
         report += f"- E2 Execution: {'✅ PASS' if finding.execution_verified else '❌ FAIL'}\n"
         report += f"- E3 State Change: {'✅ PASS' if finding.state_change_verified else '❌ FAIL'}\n"
         report += f"- E4 Impact: {'✅ PASS' if finding.economic_impact_verified else '❌ FAIL'}\n"
-        report += f"- E5 Reproducible: {'✅ PASS' if finding.reproducible else '❌ FAIL'}\n\n"
+        report += f"- E5 Reproducible: {'✅ PASS' if finding.reproducible else '❌ FAIL'}\n"
+        report += f"- **Evidence Level:** {finding.evidence_level}\n\n"
+
         if finding.ai_result:
             ai = finding.ai_result
             report += "### AI Assessment\n\n"
@@ -32,6 +36,7 @@ def generate_report(findings: List[Finding], output_path: str) -> None:
             ensemble = ai.get("ensemble", {})
             if ensemble:
                 report += f"- Ensemble agreement: {ensemble.get('agreement', 'N/A')}\n"
+            report += f"- Recommended verification: {ai.get('recommended_verification', 'N/A')}\n"
         report += "\n---\n\n"
 
     with open(output_path, "w", encoding="utf-8") as f:

@@ -1,14 +1,55 @@
 import hashlib
 import json
-from typing import List
+import logging
+from typing import List, Optional, Dict, Any
+
 from src.models.finding import Finding, SourceMapping
 
+logger = logging.getLogger(__name__)
+
+
+def _extract_contract_name(parent: dict, filename_short: str, max_iterations: int = 10) -> str:
+    """Extract contract name from parent dict, falling back to filename."""
+    if parent.get("type") == "contract":
+        return parent.get("name", "Unknown")
+
+    # Traverse up through type_specific_fields
+    current = parent
+    for _ in range(max_iterations):
+        if isinstance(current, dict) and current.get("type") == "contract":
+            return current.get("name", "Unknown")
+        parent_fields = current.get("type_specific_fields", {})
+        if isinstance(parent_fields, dict):
+            current = parent_fields.get("parent", {})
+        else:
+            break
+
+    # Fallback to filename
+    if filename_short:
+        return filename_short.replace(".sol", "")
+    return "Unknown"
+
+
 def normalize_slither_output(raw_json_path: str) -> List[Finding]:
+    """Normalize Slither JSON output into NGORI Finding model objects.
+
+    Maps Slither's tool-specific output to NGORI's canonical finding schema.
+    Preserves provenance (original detector names) and handles edge cases
+    like missing fields, malformed JSON, and unexpected structures.
+    """
     findings = []
-    with open(raw_json_path, "r") as f:
-        data = json.load(f)
+    try:
+        with open(raw_json_path, "r") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        logger.error("Failed to load Slither output: %s", exc)
+        return findings
 
     detectors = data.get("results", {}).get("detectors", [])
+
+    if not detectors:
+        logger.warning("No detectors found in Slither output")
+        return findings
 
     for detector in detectors:
         if not isinstance(detector, dict):
@@ -20,13 +61,17 @@ def normalize_slither_output(raw_json_path: str) -> List[Finding]:
         description = detector.get("description", "No description")
         elements = detector.get("elements", [])
 
+        if not isinstance(elements, list):
+            logger.warning("Expected elements list, got %s", type(elements))
+            continue
+
         for element in elements:
             if not isinstance(element, dict):
                 continue
 
             mapping_data = element.get("source_mapping", {})
             type_specific = element.get("type_specific_fields", {})
-            parent = type_specific.get("parent", {})
+            parent = type_specific.get("parent", {}) if isinstance(type_specific, dict) else {}
 
             # Extract contract name - try multiple approaches
             contract_name = "Unknown"
@@ -39,21 +84,11 @@ def normalize_slither_output(raw_json_path: str) -> List[Finding]:
             if contract_name == "Unknown":
                 filename = mapping_data.get("filename_short", "")
                 if filename:
-                    contract_name = filename.replace(".sol", "")
+                    contract_name = _extract_contract_name(parent, filename)
 
             # Method 3: traverse up through type_specific_fields
             if contract_name == "Unknown":
-                current = parent
-                max_iterations = 10
-                for _ in range(max_iterations):
-                    if isinstance(current, dict) and current.get("type") == "contract":
-                        contract_name = current.get("name", "Unknown")
-                        break
-                    parent_fields = current.get("type_specific_fields", {})
-                    if isinstance(parent_fields, dict):
-                        current = parent_fields.get("parent", {})
-                    else:
-                        break
+                contract_name = _extract_contract_name(parent, mapping_data.get("filename_short", ""), max_iterations=10)
 
             function_name = None
             if element.get("type") == "function":
