@@ -1,13 +1,21 @@
+import hashlib
 from typing import List
 from src.models.finding import Finding
 
 def deduplicate_findings(findings: List[Finding]) -> List[Finding]:
-    """Remove duplicate findings based on a fingerprint."""
     seen = set()
-    unique_findings = []
+    unique = []
     for finding in findings:
-        fingerprint = f"{finding.detector}:{finding.contract}:{finding.function}"
-        if fingerprint not in seen:
-            seen.add(fingerprint)
-            unique_findings.append(finding)
-    return unique_findings
+        mapping = finding.source_mapping
+        fingerprint = "|".join([
+            finding.detector,
+            finding.contract,
+            finding.function or "",
+            str(mapping.start if mapping else 0),
+            str(mapping.length if mapping else 0),
+        ])
+        digest = hashlib.sha256(fingerprint.encode()).hexdigest()
+        if digest not in seen:
+            seen.add(digest)
+            unique.append(finding)
+    return unique

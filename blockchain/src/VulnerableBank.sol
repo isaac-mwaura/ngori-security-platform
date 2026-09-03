@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 contract VulnerableBank {
-    mapping(address => uint256) public balances;
+    uint256 public totalBalance;
     address public owner;
 
     constructor() {
@@ -10,22 +10,23 @@ contract VulnerableBank {
     }
 
     function deposit() external payable {
-        balances[msg.sender] += msg.value;
+        totalBalance += msg.value;
     }
 
+    // Withdrawal - update total balance
     function withdraw(uint256 amount) external {
-        require(balances[msg.sender] >= amount, "insufficient balance");
-        (bool success, ) = msg.sender.call{value: amount}("");
-        require(success, "transfer failed");
-        balances[msg.sender] -= amount;
+        require(totalBalance >= amount, "insufficient balance");
+        totalBalance -= amount;
     }
 
+    // tx.origin vulnerability
     function transferOwnership(address newOwner) external {
         require(tx.origin == owner, "Not owner");
         owner = newOwner;
     }
 
+    // Unprotected selfdestruct
     function kill() external {
-        selfdestruct(payable(msg.sender));
+        selfdestruct(payable(owner));
     }
 }

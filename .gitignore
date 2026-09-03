@@ -6,4 +6,9 @@ venv/
 .venv/
 *.sol
 !examples/*.sol
-.DS_Store.env
+!blockchain/src/*.sol
+!blockchain/test/*.sol
+.DS_Store
+reports/
+dataset/
+*.db

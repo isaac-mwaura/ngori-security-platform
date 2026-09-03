@@ -1,32 +1,58 @@
-import subprocess
 import os
+import subprocess
+from pathlib import Path
 
 def run_foundry_test(contract_path: str) -> dict:
-    """Run forge test and return the result."""
-    blockchain_dir = os.path.join(os.getcwd(), "blockchain")
-    if not os.path.exists(blockchain_dir):
-        return {"error": "blockchain directory not found"}
+    project_root = Path(__file__).resolve().parents[2]
+    blockchain_dir = project_root / "blockchain"
 
-    result = {"build": False, "test": False, "state_change": False, "impact": False, "reproducible": False}
+    result = {
+        "build": False,
+        "execution": False,
+        "state_change": False,
+        "impact": False,
+        "reproducible": False,
+        "stdout": "",
+        "stderr": "",
+    }
+
+    if not blockchain_dir.exists():
+        result["error"] = "blockchain directory not found"
+        return result
 
     try:
-        # E1: Build
-        build = subprocess.run(["forge", "build"], cwd=blockchain_dir, capture_output=True, timeout=60)
+        build = subprocess.run(
+            ["forge", "build"],
+            cwd=blockchain_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
         result["build"] = build.returncode == 0
+        if not result["build"]:
+            result["stderr"] = build.stderr
+            return result
 
-        # E2: Test
-        test = subprocess.run(["forge", "test", "--match-contract", "VulnerableBankTest"], cwd=blockchain_dir, capture_output=True, timeout=60)
-        result["test"] = test.returncode == 0
+        test = subprocess.run(
+            ["forge", "test", "--match-contract", "VulnerableBankTest", "-vv"],
+            cwd=blockchain_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        result["execution"] = test.returncode == 0
+        result["stdout"] = test.stdout
+        result["stderr"] = test.stderr
 
-        # E3, E4, E5 would be more complex and require specific test implementations.
-        # For now, we will simulate their success based on the test result.
-        if result["test"]:
-            result["state_change"] = True
-            result["impact"] = True
-            result["reproducible"] = True
+        if result["execution"]:
+            output = test.stdout + "\n" + test.stderr
+            result["state_change"] = "NGORI_STATE_CHANGE=1" in output
+            result["impact"] = "NGORI_IMPACT=1" in output
+            result["reproducible"] = "NGORI_REPRODUCIBLE=1" in output
 
         return result
+
     except subprocess.TimeoutExpired:
-        return {"error": "Foundry test timed out"}
-    except Exception as e:
-        return {"error": str(e)}
+        return {**result, "error": "Foundry test timed out"}
+    except Exception as exc:
+        return {**result, "error": str(exc)}

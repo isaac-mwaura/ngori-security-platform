@@ -1,84 +1,101 @@
+import os
 import subprocess
 import sys
-import os
 from pathlib import Path
 from dotenv import load_dotenv
 from src.analyzer.normalizer import normalize_slither_output
 from src.analyzer.deduplicate import deduplicate_findings
 from src.ai.triage import groq_triage_finding
-from src.ai.router import GroqRouter
 from src.verification.foundry import run_foundry_test
 from src.evidence.engine import update_evidence
 from src.reporting.generator import generate_report
-from src.models.finding import Finding
+from src.dataset.exporter import export_jsonl
 
 load_dotenv()
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BLOCKCHAIN_DIR = PROJECT_ROOT / "blockchain"
+EVIDENCE_DIR = BLOCKCHAIN_DIR / "evidence"
+REPORT_DIR = PROJECT_ROOT / "reports"
+DATASET_DIR = PROJECT_ROOT / "dataset"
 
 def run_slither(contract_path: str, output_path: str) -> None:
-    """Run Slither static analysis on a contract."""
-    abs_contract = os.path.abspath(contract_path)
-    abs_output = os.path.abspath(output_path)
-    env = os.environ.copy()
-    env["PATH"] = f"{os.path.expanduser('/home/arch/.config/.foundry/bin')}:{env.get('PATH', '')}"
-    subprocess.run(
-        ["slither", abs_contract, "--json", abs_output],
-        cwd=BLOCKCHAIN_DIR,
-        env=env,
-        timeout=120
+    contract = Path(contract_path).resolve()
+    output = Path(output_path).resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    # Run slither - may return non-zero if vulnerabilities found, but that's OK
+    result = subprocess.run(
+        ["slither", str(contract), "--json", str(output)],
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
+    # Slither may return 1 if vulnerabilities found, but output JSON is still valid
+    # Check if output was generated successfully
+    if not output.exists():
+        raise RuntimeError("Slither failed to generate output:\n" + result.stderr)
 
 def main():
     if len(sys.argv) < 2:
         print("Usage: python -m src.main <contract_file.sol>")
         sys.exit(1)
 
-    contract_path = sys.argv[1]
-    print(f"\n🔍 Analyzing contract: {Path(contract_path).stem}")
+    contract_path = Path(sys.argv[1]).resolve()
+    if not contract_path.exists():
+        print(f"Contract not found: {contract_path}")
+        sys.exit(1)
+
+    print(f"\n🔍 Analyzing: {contract_path.name}")
     print("=" * 60)
 
-    # 1. Run Slither
-    print("📊 Running Slither static analysis...")
-    raw_json_path = BLOCKCHAIN_DIR / "evidence" / "slither_raw.json"
-    os.makedirs(BLOCKCHAIN_DIR / "evidence", exist_ok=True)
-    run_slither(contract_path, str(raw_json_path))
+    raw_json = EVIDENCE_DIR / "slither_raw.json"
 
-    # 2. Normalize Findings
+    # E0: Static Analysis
+    print("📊 Running Slither...")
+    run_slither(str(contract_path), str(raw_json))
+
+    # Normalize
     print("📝 Normalizing findings...")
-    findings = normalize_slither_output(str(raw_json_path))
+    findings = normalize_slither_output(str(raw_json))
 
-    # 3. Deduplicate
-    print("🧹 Deduplicating findings...")
+    # Deduplicate
+    print("🧹 Deduplicating...")
     findings = deduplicate_findings(findings)
 
     if not findings:
-        print("No findings detected. Exiting.")
+        print("No findings detected.")
         sys.exit(0)
 
-    # 4. AI Triage & Verification
-    print("🤖 AI Triage in progress...")
-    router = GroqRouter()
-    verified_findings = []
-    for finding in findings:
-        # Triage
-        ai_result = groq_triage_finding(finding)
-        # Update finding with AI result if needed
-        # ...
+    print(f"Found {len(findings)} findings.")
 
-        # Verify
-        verification_result = run_foundry_test(str(contract_path))
-        finding = update_evidence(finding, verification_result)
-        verified_findings.append(finding)
+    # AI + Verification
+    for index, finding in enumerate(findings, start=1):
+        print(f"\n🤖 Finding {index}/{len(findings)}: {finding.detector}")
 
-    # 5. Generate Report
-    print("📄 Generating report...")
-    report_path = PROJECT_ROOT / "reports" / f"{Path(contract_path).stem}.md"
-    os.makedirs(PROJECT_ROOT / "reports", exist_ok=True)
-    generate_report(verified_findings, str(report_path))
+        # AI Triage (4-Key Consensus)
+        ai_result = groq_triage_finding(finding, passes=4)
+        finding.ai_result = ai_result
+        print(f"   AI classification: {ai_result.get('classification', 'ERROR')}")
 
-    print(f"✅ Report generated: {report_path}")
+        # Foundry Verification
+        print("   🔬 Running Foundry...")
+        verification = run_foundry_test(str(contract_path))
+        finding = update_evidence(finding, verification)
+
+    # Generate Reports
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    report_path = REPORT_DIR / f"{contract_path.stem}.md"
+    generate_report(findings, str(report_path))
+
+    # Export Dataset
+    DATASET_DIR.mkdir(parents=True, exist_ok=True)
+    dataset_path = DATASET_DIR / f"{contract_path.stem}.jsonl"
+    export_jsonl(findings, str(dataset_path))
+
+    print("\n" + "=" * 60)
+    print("✅ NGORI COMPLETE")
+    print(f"📄 Report: {report_path}")
+    print(f"🧠 Dataset: {dataset_path}")
 
 if __name__ == "__main__":
     main()
