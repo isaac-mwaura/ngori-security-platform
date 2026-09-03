@@ -26,7 +26,7 @@ def finding_to_record(finding: Finding) -> dict:
             "E5_reproducible": finding.reproducible,
         },
         "ai": finding.ai_result,
-        "verification": finding.verification_result,
+        "verification": finding.verification_result.model_dump() if finding.verification_result else None,
         "metadata": finding.metadata,
     }
 
