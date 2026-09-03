@@ -1,5 +1,6 @@
 from collections import Counter
 from typing import Any, Dict, List
+from src.models.contract import Contract
 from src.models.finding import Finding
 from src.ai.router import GroqRouter
 
@@ -39,6 +40,46 @@ Source mapping:
 {finding.source_mapping.model_dump() if finding.source_mapping else "N/A"}
 """},
     ]
+
+
+def triage_vulnerabilities(contract: Contract) -> Dict[str, Any]:
+    if not contract.vulnerabilities:
+        return {"priority": "SAFE", "recommendation": "No issues found", "actions": []}
+
+    severities = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    for vulnerability in contract.vulnerabilities:
+        severities[vulnerability.severity] = severities.get(vulnerability.severity, 0) + 1
+
+    if severities["CRITICAL"] > 0:
+        priority = "IMMEDIATE"
+        recommendation = "Critical vulnerabilities found - fix immediately"
+    elif severities["HIGH"] > 1:
+        priority = "URGENT"
+        recommendation = "High severity issues require urgent attention"
+    elif severities["HIGH"] > 0 or severities["MEDIUM"] > 2:
+        priority = "HIGH"
+        recommendation = "Significant issues need to be addressed"
+    elif severities["MEDIUM"] > 0:
+        priority = "MEDIUM"
+        recommendation = "Medium priority issues should be reviewed"
+    else:
+        priority = "LOW"
+        recommendation = "Minor issues can be addressed in routine maintenance"
+
+    actions = [
+        f"Fix {vulnerability.name} ({vulnerability.severity})"
+        for vulnerability in contract.vulnerabilities
+        if vulnerability.severity in ["CRITICAL", "HIGH"]
+    ]
+    if not actions:
+        actions.append("Review all vulnerabilities")
+
+    return {
+        "priority": priority,
+        "recommendation": recommendation,
+        "actions": actions[:3],
+        "severity_counts": severities,
+    }
 
 def groq_triage_finding(
     finding: Finding,
