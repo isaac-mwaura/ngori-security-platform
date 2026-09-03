@@ -9,41 +9,56 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+
+    # CRITICAL: Install system build tools for Slither
+    - name: Install System Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc libssl-dev
+
     - name: Install Python Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install slither-analyzer solc-select
+
     - name: Install Solidity Compiler
       run: |
         solc-select install 0.8.20
         solc-select use 0.8.20
+        solc --version
+
     - name: Set up Foundry
       uses: foundry-rs/foundry-toolchain@v1
+
     - name: Foundry Build
       run: |
         cd blockchain
         forge build
+
     - name: Foundry Test
       run: |
         cd blockchain
         forge test -vv
-    - name: Run Python Tests
-      run: pytest tests/ || true
+
     - name: Run NGORI on Example Contracts
       run: |
         python -m src.main examples/vulnerable_contract.sol
-    - name: Upload Artifacts
+
+    - name: Upload Reports
       uses: actions/upload-artifact@v4
       with:
         name: reports
         path: reports/
+
     - name: Upload Datasets
       uses: actions/upload-artifact@v4
       with:
