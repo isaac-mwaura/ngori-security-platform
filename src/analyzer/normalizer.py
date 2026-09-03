@@ -28,18 +28,32 @@ def normalize_slither_output(raw_json_path: str) -> List[Finding]:
             type_specific = element.get("type_specific_fields", {})
             parent = type_specific.get("parent", {})
 
-            contract_parent = parent
-            while (
-                isinstance(contract_parent, dict)
-                and contract_parent.get("type") != "contract"
-            ):
-                contract_parent = contract_parent.get("type_specific_fields", {}).get("parent", {})
+            # Extract contract name - try multiple approaches
+            contract_name = "Unknown"
 
-            contract_name = (
-                contract_parent.get("name", "Unknown")
-                if isinstance(contract_parent, dict)
-                else "Unknown"
-            )
+            # Method 1: parent.type == "contract" (most common in Slither output)
+            if isinstance(parent, dict) and parent.get("type") == "contract":
+                contract_name = parent.get("name", "Unknown")
+
+            # Method 2: from source mapping filename
+            if contract_name == "Unknown":
+                filename = mapping_data.get("filename_short", "")
+                if filename:
+                    contract_name = filename.replace(".sol", "")
+
+            # Method 3: traverse up through type_specific_fields
+            if contract_name == "Unknown":
+                current = parent
+                max_iterations = 10
+                for _ in range(max_iterations):
+                    if isinstance(current, dict) and current.get("type") == "contract":
+                        contract_name = current.get("name", "Unknown")
+                        break
+                    parent_fields = current.get("type_specific_fields", {})
+                    if isinstance(parent_fields, dict):
+                        current = parent_fields.get("parent", {})
+                    else:
+                        break
 
             function_name = None
             if element.get("type") == "function":
