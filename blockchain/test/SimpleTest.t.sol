@@ -14,16 +14,16 @@
      }
 
      function testSimpleDepositWithdraw() public {
-         // Before: bank has 10 ether
-         uint256 before = address(bank).balance;
+         // Before: bank records 10 ether
+         uint256 before = bank.totalBalance();
          
          // Withdraw 5 ether
          bank.withdraw(5 ether);
          
-         // After: bank should have 5 ether
-         uint256 afterBalance = address(bank).balance;
+         // After: bank records 5 ether
+         uint256 afterBalance = bank.totalBalance();
          
-         // Bank should have 5 ether remaining (10 - 5)
-         assertGt(before, afterBalance);
+         assertEq(afterBalance, 5 ether);
+         assertLt(afterBalance, before);
      }
  }
