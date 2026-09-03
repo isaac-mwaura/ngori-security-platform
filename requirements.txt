@@ -3,4 +3,3 @@ python-dotenv==1.0.1
 pydantic>=2.7,<3
 groq==1.7.0
 slither-analyzer==0.10.3
-solc-select==1.0.4

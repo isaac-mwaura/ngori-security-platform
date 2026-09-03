@@ -19,7 +19,6 @@ jobs:
       with:
         python-version: '3.11'
 
-    # CRITICAL: Install system build tools for Slither
     - name: Install System Dependencies
       run: |
         sudo apt-get update
@@ -30,13 +29,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Install Solidity Compiler
-      run: |
-        solc-select install 0.8.20
-        solc-select use 0.8.20
-        solc --version
+    # REMOVED: solc-select step – Foundry already provides solc
 
-    - name: Set up Foundry
+    - name: Set up Foundry (includes Solc)
       uses: foundry-rs/foundry-toolchain@v1
 
     - name: Foundry Build
