@@ -11,4 +11,7 @@ venv/
 .DS_Store
 reports/
 dataset/
+!src/dataset/
+!src/dataset/__init__.py
+!src/dataset/exporter.py
 *.db
